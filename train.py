@@ -50,7 +50,8 @@ from models.yolo import Model
 from utils.autoanchor import check_anchors
 from utils.autobatch import check_train_batch_size
 from utils.callbacks import Callbacks
-from utils.dataloaders import create_dataloader
+#from utils.dataloaders import create_dataloader
+from utils.custom_dataloaders import create_dataloader
 from utils.downloads import attempt_download, is_url
 from utils.general import (
     LOGGER,
@@ -258,7 +259,7 @@ def train(hyp, opt, device, callbacks):
         gs,
         single_cls,
         hyp=hyp,
-        augment=True,
+        augment=False,
         cache=None if opt.cache == "val" else opt.cache,
         rect=opt.rect,
         rank=LOCAL_RANK,
@@ -380,6 +381,7 @@ def train(hyp, opt, device, callbacks):
             # Forward
             with torch.cuda.amp.autocast(amp):
                 pred = model(imgs)  # forward
+                #visualize_predictions(imgs, pred, i)
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 if RANK != -1:
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
@@ -417,6 +419,31 @@ def train(hyp, opt, device, callbacks):
         lr = [x["lr"] for x in optimizer.param_groups]  # for loggers
         scheduler.step()
 
+        #val_loader = create_dataloader(
+        #    val_path,
+        #    imgsz,
+        #    batch_size // WORLD_SIZE * 2,
+        #    gs,
+        #    single_cls,
+        #    hyp=hyp,
+        #    cache=None if noval else opt.cache,
+        #    rect=True,
+        #    rank=-1,
+        #    workers=workers * 2,
+        #    pad=0.5,
+        #    prefix=colorstr("val: "),
+        #)[0]
+        
+        #model.train()
+        #model.to(device)
+        #for i, (imgs, targets, paths, _) in enumerate(train_loader):
+        #    imgs = imgs.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
+        #    results = model(imgs)
+        #    results.show()
+        #    print(results)
+        #    print(f'hello?')
+        #print(f'results are ... ')
+        #model.train()
         if RANK in {-1, 0}:
             # mAP
             callbacks.run("on_train_epoch_end", epoch=epoch)
@@ -432,7 +459,7 @@ def train(hyp, opt, device, callbacks):
                     single_cls=single_cls,
                     dataloader=val_loader,
                     save_dir=save_dir,
-                    plots=False,
+                    plots=True,
                     callbacks=callbacks,
                     compute_loss=compute_loss,
                 )

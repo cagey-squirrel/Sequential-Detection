@@ -1,0 +1,5 @@
+train: ../../datasets/brain_tumor_detection/train/images
+val: ../../datasets/brain_tumor_detection/test/images
+
+nc: 1
+names: [brain_tumor']
