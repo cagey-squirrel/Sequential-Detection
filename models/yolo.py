@@ -14,6 +14,7 @@ import platform
 import sys
 from copy import deepcopy
 from pathlib import Path
+from models.experimental import ExpandTimeDimension, ExpansionAwareConcat
 
 import torch
 import torch.nn as nn
@@ -112,7 +113,28 @@ class Detect(nn.Module):
                     y = torch.cat((xy, wh, conf), 4)
                 z.append(y.view(bs, self.na * nx * ny, self.no))
 
-        return x if self.training else (torch.cat(z, 1),) if self.export else (torch.cat(z, 1), x)
+        if self.training:
+            return x
+        elif self.export:
+            return (torch.cat(z, 1),)
+        else:
+            z1, z2, z3 = z
+
+            if z1.shape[0] > z3.shape[0]:
+                
+                batch_x_time, channels, wh = z1.shape
+                z1 = z1.view(batch_x_time // 3, 3, channels, wh)
+                z1 = z1[:, 1, ...]
+                z = z1, z2, z3
+            
+            if z2.shape[0] > z3.shape[0]:
+                
+                batch_x_time, channels, wh = z2.shape
+                z2 = z2.view(batch_x_time // 3, 3, channels, wh)
+                z2 = z2[:, 1, ...]
+                z = z1, z2, z3
+            return (torch.cat(z, 1), x)
+            
 
     def _make_grid(self, nx=20, ny=20, i=0, torch_1_10=check_version(torch.__version__, "1.10.0")):
         """Generates a mesh grid for anchor boxes with optional compatibility for torch versions < 1.10."""
@@ -424,6 +446,8 @@ def parse_model(d, ch):
             args = [ch[f]]
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
+        elif m is ExpansionAwareConcat:
+            c2 = sum(ch[x] for x in f)
         # TODO: channel, gw, gd
         elif m in {Detect, Segment}:
             args.append([ch[x] for x in f])
@@ -435,6 +459,9 @@ def parse_model(d, ch):
             c2 = ch[f] * args[0] ** 2
         elif m is Expand:
             c2 = ch[f] // args[0] ** 2
+        elif m is ExpandTimeDimension:
+            c2 = 3 * ch[-1]
+            #c2 = ch[-1]
         else:
             c2 = ch[f]
 

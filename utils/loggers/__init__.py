@@ -192,9 +192,9 @@ class Loggers:
         # Callback runs on train batch end
         # ni: number integrated batches (since train start)
         if self.plots:
-            if ni < 3 or True:
+            if ni < 3: #or True:
                 f = self.save_dir / f"train_batch{ni}.jpg"  # filename
-                plot_images(imgs, targets, paths, f)
+                plot_images(imgs, targets, paths, f, sequential=self.opt.sequential)
                 if ni == 0 and self.tb and not self.opt.sync_bn:
                     log_tensorboard_graph(self.tb, model, imgsz=(self.opt.imgsz, self.opt.imgsz))
             if ni == 10 and (self.wandb or self.clearml):

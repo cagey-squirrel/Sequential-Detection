@@ -10,6 +10,48 @@ import torch.nn as nn
 from utils.downloads import attempt_download
 
 
+class ExpandTimeDimension(nn.Module):
+    def __init__(self, time=3):
+        super().__init__()
+        self.time = time
+
+    
+    def forward(self, x):
+
+
+        batch_x_time, channels, width, height = x.shape
+        #print(f'x.shape = {x.shape}')
+        if batch_x_time == 1:
+            x = torch.cat([x, x, x], 1)
+        else:
+            x = x.view(batch_x_time // self.time, self.time * channels, width, height)
+        return x
+
+
+class ExpansionAwareConcat(nn.Module):
+    # Concatenate a list of tensors along dimension
+    def __init__(self, dimension=1, time=3):
+        """Initializes a Concat module to concatenate tensors along a specified dimension."""
+        super().__init__()
+        self.d = dimension
+        self.time = time
+
+    def forward(self, x):
+        """Concatenates a list of tensors along a specified dimension; `x` is a list of tensors, `dimension` is an
+        int.
+        """
+        x1, x2 = x
+
+        if x1.shape[0] != x2.shape[0]:
+            #print(f'x1.shape = {x1.shape} and x2.shape = {x2.shape}')
+            batch_x_time, channels, width, height = x2.shape
+            x2 = x2.view(batch_x_time // self.time, self.time, channels, width, height)
+            x2 = x2[:, 1, ...]
+
+        x = torch.cat([x1, x2], self.d)
+        return x
+
+
 class Sum(nn.Module):
     """Weighted sum of 2 or more layers https://arxiv.org/abs/1911.09070."""
 

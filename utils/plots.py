@@ -145,8 +145,16 @@ def output_to_target(output, max_det=300):
 
 
 @threaded
-def plot_images(images, targets, paths=None, fname="images.jpg", names=None):
+def plot_images(images, targets, paths=None, fname="images.jpg", names=None, sequential=False):
     """Plots an image grid with labels from YOLOv5 predictions or targets, saving to `fname`."""
+
+    if sequential:
+        batch_x_t, c, w, h = images.shape 
+        t = 3
+        images = images.view(batch_x_t // t, t, c, w, h)
+        images = images[:, 1, ...]
+        #print(images.shape)
+        #exit(-1)
     if isinstance(images, torch.Tensor):
         images = images.cpu().float().numpy()
     if isinstance(targets, torch.Tensor):

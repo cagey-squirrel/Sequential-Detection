@@ -50,8 +50,8 @@ from models.yolo import Model
 from utils.autoanchor import check_anchors
 from utils.autobatch import check_train_batch_size
 from utils.callbacks import Callbacks
-#from utils.dataloaders import create_dataloader
-from utils.custom_dataloaders import create_dataloader
+from utils.dataloaders import create_dataloader
+from utils.custom_dataloaders import create_custom_dataloader
 from utils.downloads import attempt_download, is_url
 from utils.general import (
     LOGGER,
@@ -251,8 +251,13 @@ def train(hyp, opt, device, callbacks):
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
         LOGGER.info("Using SyncBatchNorm()")
 
+    if opt.sequential:
+        dataloader = create_custom_dataloader
+    else:
+        dataloader = create_dataloader
+
     # Trainloader
-    train_loader, dataset = create_dataloader(
+    train_loader, dataset = dataloader(
         train_path,
         imgsz,
         batch_size // WORLD_SIZE,
@@ -269,6 +274,7 @@ def train(hyp, opt, device, callbacks):
         prefix=colorstr("train: "),
         shuffle=True,
         seed=opt.seed,
+        mode='train'
     )
     labels = np.concatenate(dataset.labels, 0)
     mlc = int(labels[:, 0].max())  # max label class
@@ -276,7 +282,7 @@ def train(hyp, opt, device, callbacks):
 
     # Process 0
     if RANK in {-1, 0}:
-        val_loader = create_dataloader(
+        val_loader = dataloader(
             val_path,
             imgsz,
             batch_size // WORLD_SIZE * 2,
@@ -284,11 +290,12 @@ def train(hyp, opt, device, callbacks):
             single_cls,
             hyp=hyp,
             cache=None if noval else opt.cache,
-            rect=True,
+            rect=opt.rect,
             rank=-1,
             workers=workers * 2,
             pad=0.5,
             prefix=colorstr("val: "),
+            mode='val'
         )[0]
 
         if not resume:
@@ -332,6 +339,14 @@ def train(hyp, opt, device, callbacks):
         f"Logging results to {colorstr('bold', save_dir)}\n"
         f'Starting training for {epochs} epochs...'
     )
+
+    total_params = sum(p.numel() for p in model.parameters())
+    file_path = os.path.join(save_dir, "params.txt")
+    f = open(file_path, 'a')
+    f.write(f"Number of parameters: {total_params}")
+    print(f"Number of parameters: {total_params}")
+    f.close()
+    
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         callbacks.run("on_train_epoch_start")
         model.train()
@@ -419,31 +434,6 @@ def train(hyp, opt, device, callbacks):
         lr = [x["lr"] for x in optimizer.param_groups]  # for loggers
         scheduler.step()
 
-        #val_loader = create_dataloader(
-        #    val_path,
-        #    imgsz,
-        #    batch_size // WORLD_SIZE * 2,
-        #    gs,
-        #    single_cls,
-        #    hyp=hyp,
-        #    cache=None if noval else opt.cache,
-        #    rect=True,
-        #    rank=-1,
-        #    workers=workers * 2,
-        #    pad=0.5,
-        #    prefix=colorstr("val: "),
-        #)[0]
-        
-        #model.train()
-        #model.to(device)
-        #for i, (imgs, targets, paths, _) in enumerate(train_loader):
-        #    imgs = imgs.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
-        #    results = model(imgs)
-        #    results.show()
-        #    print(results)
-        #    print(f'hello?')
-        #print(f'results are ... ')
-        #model.train()
         if RANK in {-1, 0}:
             # mAP
             callbacks.run("on_train_epoch_end", epoch=epoch)
@@ -462,6 +452,7 @@ def train(hyp, opt, device, callbacks):
                     plots=True,
                     callbacks=callbacks,
                     compute_loss=compute_loss,
+                    opt=opt
                 )
 
             # Update best mAP
@@ -527,6 +518,7 @@ def train(hyp, opt, device, callbacks):
                         plots=plots,
                         callbacks=callbacks,
                         compute_loss=compute_loss,
+                        opt=opt
                     )  # val best model with plots
                     if is_coco:
                         callbacks.run("on_fit_epoch_end", list(mloss) + list(results) + lr, epoch, best_fitness, fi)
@@ -592,8 +584,9 @@ def parse_opt(known=False):
     return parser.parse_known_args()[0] if known else parser.parse_args()
 
 
-def main(opt, callbacks=Callbacks()):
+def main(opt):
     """Runs training or hyperparameter evolution with specified options and optional callbacks."""
+    callbacks=Callbacks()
     if RANK in {-1, 0}:
         print_args(vars(opt))
         check_git_status()
